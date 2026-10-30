@@ -1,0 +1,22 @@
+nextflow_pipeline {
+
+    name "Pipeline on the test profile"
+    script "../main.nf"
+    profile "test"
+
+    test("runs offline and writes the results") {
+
+        then {
+            assert workflow.success
+            // COMBINE, ALIGN, TRIMAL and SUMMARY; no download
+            assert workflow.trace.succeeded().size() == 4
+
+            for (name in ["cleaned_aligned.fasta", "report.html", "summary.tsv"]) {
+                assert path("$launchDir/results/$name").exists()
+                assert path("$launchDir/results/$name").size() > 0
+            }
+            // header and one row for each of the 5 inputs and the reference
+            assert path("$launchDir/results/summary.tsv").readLines().size() == 7
+        }
+    }
+}

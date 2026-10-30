@@ -1,0 +1,24 @@
+nextflow_process {
+
+    name "SUMMARY"
+    script "../main.nf"
+    process "SUMMARY"
+
+    test("known small alignment") {
+
+        when {
+            process {
+                """
+                input[0] = file("${projectDir}/tests/data/sequences.fasta")
+                input[1] = file("${projectDir}/tests/data/aligned.fasta")
+                input[2] = file("${projectDir}/tests/data/trimmed.fasta")
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            assert path(process.out.summary[0]).text == path("${projectDir}/tests/data/summary.tsv").text
+        }
+    }
+}
