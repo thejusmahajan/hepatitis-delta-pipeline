@@ -1,51 +1,57 @@
 name: CI
-on: push
+
+on:
+  push:
+  pull_request:
+
 jobs:
-  look:
+  test:
     runs-on: ubuntu-24.04
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Quay tags
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: nf-core/setup-nextflow@893c28b667aedeba26e37f296d260ccc5bc4d914 # v3.0.1
+        with:
+          version: "26.10.4"
+
+      - uses: nf-core/setup-nf-test@4069fbbaabe94c08faba4ad261bfa88225ba133f # v2.1.0
+        with:
+          version: "0.9.5"
+
+      - name: Build the summary image
+        run: docker build -t hdv-summary:0.1.0 containers/summary
+
+      - name: Test summary.py
         run: |
-          for t in mafft:7.525 trimal:1.5.0 entrez-direct:24.0; do
-            tool=${t%%:*}; ver=${t#*:}
-            echo "== $tool $ver"
-            curl -s "https://quay.io/api/v1/repository/biocontainers/$tool/tag/?filter_tag_name=like:$ver&limit=100&onlyActiveTags=true" \
-              | jq -r '.tags | sort_by(.start_ts) | .[] | "\(.name) \(.last_modified) \(.size)"'
-          done
-      - name: Releases
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install biopython==1.88 numpy==2.5.4 pytest==9.2.0
+          "$RUNNER_TEMP/venv/bin/pytest" tests/test_summary.py
+
+      - name: Run nf-test with Docker
+        run: nf-test test --profile +docker
+
+      - name: Install Apptainer
         run: |
-          for r in apptainer/apptainer askimed/nf-test nextflow-io/nextflow; do
-            echo "== $r"
-            curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$r/releases?per_page=6" \
-              | jq -r '.[] | "\(.tag_name) \(.published_at) pre=\(.prerelease) \([.assets[].name] | map(select(test("amd64.deb$|nf-test"))) | join(","))"'
-          done
-          for r in actions/checkout actions/setup-java actions/upload-artifact nf-core/setup-nextflow nf-core/setup-nf-test eWaterCycle/setup-apptainer; do
-            echo "== $r"
-            git ls-remote --tags https://github.com/$r | grep -E 'refs/tags/v[0-9]+(\.[0-9]+)*(\^\{\})?$' | sort -t/ -k3 -V | tail -6
-          done
-      - name: Runner
+          wget -q https://github.com/apptainer/apptainer/releases/download/v1.5.5/apptainer_1.5.5_amd64.deb
+          sudo apt-get install -y ./apptainer_1.5.5_amd64.deb
+          apptainer --version
+
+      - name: Run the test profile with Apptainer
+        env:
+          NXF_APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer
         run: |
-          lsb_release -a; docker version --format '{{.Server.Version}}'; java -version 2>&1 | head -1
-          sysctl kernel.apparmor_restrict_unprivileged_userns || true
-          curl -fsSL https://get.nf-test.com | head -40
-      - name: Images
-        run: |
-          for t in mafft:7.525 trimal:1.5.0 entrez-direct:24.0; do
-            tool=${t%%:*}; ver=${t#*:}
-            tag=$(curl -s "https://quay.io/api/v1/repository/biocontainers/$tool/tag/?filter_tag_name=like:$ver&limit=100&onlyActiveTags=true" | jq -r '.tags | sort_by(.start_ts) | last | .name')
-            echo "== $tool:$tag"
-            docker pull -q quay.io/biocontainers/$tool:$tag
-            docker image inspect quay.io/biocontainers/$tool:$tag --format '{{.Size}}'
-            docker run --rm quay.io/biocontainers/$tool:$tag sh -c 'command -v bash cat ps; mafft --version 2>&1; trimal --version 2>&1; esearch -version 2>&1' || true
-          done
-      - name: Fetch M21012
-        run: |
-          tag=$(curl -s "https://quay.io/api/v1/repository/biocontainers/entrez-direct/tag/?filter_tag_name=like:24.0&limit=100&onlyActiveTags=true" | jq -r '.tags | sort_by(.start_ts) | last | .name')
-          docker run --rm quay.io/biocontainers/entrez-direct:$tag sh -c 'esearch -db nucleotide -query "M21012" | efetch -format fasta' > M21012.fasta
-          cat -A M21012.fasta
-          wc -c -l M21012.fasta
-          md5sum M21012.fasta
-          sha256sum M21012.fasta
-          echo "BASE64 $(base64 -w0 M21012.fasta)"
+          mkdir -p "$NXF_APPTAINER_CACHEDIR"
+          # Apptainer cannot pull a local Docker image, so convert it into the file Nextflow looks for in its cache
+          apptainer build "$NXF_APPTAINER_CACHEDIR/hdv-summary-0.1.0.img" docker-daemon://hdv-summary:0.1.0
+          nextflow run main.nf -profile test,apptainer
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: results
+          path: results/
