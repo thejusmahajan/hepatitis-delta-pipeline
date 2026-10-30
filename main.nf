@@ -22,7 +22,7 @@ process COMBINE {
 
     output:
     path "combined.fasta"
-// don't know if this is a standard 
+// Concatenate the input FASTA files and the reference into one file.
     script:
     """
     cat $fastas > combined.fasta
@@ -37,14 +37,14 @@ process ALIGN {
 
     output:
     path "aligned.fasta"
-// mafft can be annoying. Be careful!
+// Align all sequences with MAFFT's default progressive method (FFT-NS-2).
     script:
     """
     mafft $combined_fasta > aligned.fasta
     """
 }
 // again, trimal tool is something that need care
-// at this point, I am bored to add more comments
+// Remove poorly aligned columns with trimAl's -automated1 heuristic and write an HTML report.
 process TRIMAL {
     conda 'trimal=1.5.0'
     container 'quay.io/biocontainers/trimal:1.5.0--h9948957_2'
