@@ -66,8 +66,12 @@ workflow {
         input_ch = Channel.fromPath("${params.in}/*.fasta")
                           .ifEmpty { error "No fasta files found in ${params.in}" }
         
-        // Download reference
-        ref_ch = DOWNLOAD_REFERENCE(params.accession)
+        // Use the given reference file, otherwise download it
+        if (params.reference) {
+            ref_ch = Channel.fromPath(params.reference, checkIfExists: true)
+        } else {
+            ref_ch = DOWNLOAD_REFERENCE(params.accession)
+        }
 
         // Mix and collect
         all_fastas = input_ch.mix(ref_ch).collect()
