@@ -1,0 +1,4 @@
+sequence	length	n_sequences	aligned_length	trimmed_length	percent_kept
+a	8	3	8	6	75.0
+b	7	3	8	6	75.0
+c	7	3	8	6	75.0
