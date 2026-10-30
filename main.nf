@@ -52,12 +52,29 @@ process TRIMAL {
     path aligned_fasta
 
     output:
-    path "cleaned_aligned.fasta"
-    path "report.html"
+    path "cleaned_aligned.fasta", emit: trimmed
+    path "report.html", emit: report
 
     script:
     """
     trimal -in $aligned_fasta -out cleaned_aligned.fasta -htmlout report.html -automated1
+    """
+}
+// sequence lengths and how much of the alignment was kept
+process SUMMARY {
+    conda 'biopython=1.88'
+    container 'hdv-summary:0.1.0'
+    input:
+    path combined_fasta
+    path aligned_fasta
+    path cleaned_fasta
+
+    output:
+    path "summary.tsv", emit: summary
+
+    script:
+    """
+    summary.py $combined_fasta $aligned_fasta $cleaned_fasta -o summary.tsv
     """
 }
 
@@ -78,7 +95,8 @@ workflow {
         
         combine_out = COMBINE(all_fastas)
         align_out = ALIGN(combine_out)
-        TRIMAL(align_out)
+        trimal_out = TRIMAL(align_out)
+        SUMMARY(combine_out, align_out, trimal_out.trimmed)
     } else {
         error "--in directory is missing"
     }
