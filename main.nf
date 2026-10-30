@@ -2,6 +2,7 @@ nextflow.enable.dsl=2
 //download fasta from ncbi using accession number
 process DOWNLOAD_REFERENCE {
     conda 'entrez-direct=24.0'
+    container 'quay.io/biocontainers/entrez-direct:24.0--he881be0_0'
     input:
     val accession
 
@@ -15,6 +16,7 @@ process DOWNLOAD_REFERENCE {
 }
 // combinig process. 
 process COMBINE {
+    container 'ubuntu:noble-20261024.1'
     input:
     path fastas
 
@@ -29,6 +31,7 @@ process COMBINE {
 // alignment
 process ALIGN {
     conda 'mafft=7.525'
+    container 'quay.io/biocontainers/mafft:7.525--h031d066_1'
     input:
     path combined_fasta
 
@@ -44,6 +47,7 @@ process ALIGN {
 // at this point, I am bored to add more comments
 process TRIMAL {
     conda 'trimal=1.5.0'
+    container 'quay.io/biocontainers/trimal:1.5.0--h9948957_2'
     input:
     path aligned_fasta
 
