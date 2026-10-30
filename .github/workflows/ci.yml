@@ -1,0 +1,51 @@
+name: CI
+on: push
+jobs:
+  look:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Quay tags
+        run: |
+          for t in mafft:7.525 trimal:1.5.0 entrez-direct:24.0; do
+            tool=${t%%:*}; ver=${t#*:}
+            echo "== $tool $ver"
+            curl -s "https://quay.io/api/v1/repository/biocontainers/$tool/tag/?filter_tag_name=like:$ver&limit=100&onlyActiveTags=true" \
+              | jq -r '.tags | sort_by(.start_ts) | .[] | "\(.name) \(.last_modified) \(.size)"'
+          done
+      - name: Releases
+        run: |
+          for r in apptainer/apptainer askimed/nf-test nextflow-io/nextflow; do
+            echo "== $r"
+            curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$r/releases?per_page=6" \
+              | jq -r '.[] | "\(.tag_name) \(.published_at) pre=\(.prerelease) \([.assets[].name] | map(select(test("amd64.deb$|nf-test"))) | join(","))"'
+          done
+          for r in actions/checkout actions/setup-java actions/upload-artifact nf-core/setup-nextflow nf-core/setup-nf-test eWaterCycle/setup-apptainer; do
+            echo "== $r"
+            git ls-remote --tags https://github.com/$r | grep -E 'refs/tags/v[0-9]+(\.[0-9]+)*(\^\{\})?$' | sort -t/ -k3 -V | tail -6
+          done
+      - name: Runner
+        run: |
+          lsb_release -a; docker version --format '{{.Server.Version}}'; java -version 2>&1 | head -1
+          sysctl kernel.apparmor_restrict_unprivileged_userns || true
+          curl -fsSL https://get.nf-test.com | head -40
+      - name: Images
+        run: |
+          for t in mafft:7.525 trimal:1.5.0 entrez-direct:24.0; do
+            tool=${t%%:*}; ver=${t#*:}
+            tag=$(curl -s "https://quay.io/api/v1/repository/biocontainers/$tool/tag/?filter_tag_name=like:$ver&limit=100&onlyActiveTags=true" | jq -r '.tags | sort_by(.start_ts) | last | .name')
+            echo "== $tool:$tag"
+            docker pull -q quay.io/biocontainers/$tool:$tag
+            docker image inspect quay.io/biocontainers/$tool:$tag --format '{{.Size}}'
+            docker run --rm quay.io/biocontainers/$tool:$tag sh -c 'command -v bash cat ps; mafft --version 2>&1; trimal --version 2>&1; esearch -version 2>&1' || true
+          done
+      - name: Fetch M21012
+        run: |
+          tag=$(curl -s "https://quay.io/api/v1/repository/biocontainers/entrez-direct/tag/?filter_tag_name=like:24.0&limit=100&onlyActiveTags=true" | jq -r '.tags | sort_by(.start_ts) | last | .name')
+          docker run --rm quay.io/biocontainers/entrez-direct:$tag sh -c 'esearch -db nucleotide -query "M21012" | efetch -format fasta' > M21012.fasta
+          cat -A M21012.fasta
+          wc -c -l M21012.fasta
+          md5sum M21012.fasta
+          sha256sum M21012.fasta
+          echo "BASE64 $(base64 -w0 M21012.fasta)"
